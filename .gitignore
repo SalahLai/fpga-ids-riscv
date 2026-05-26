@@ -1,0 +1,30 @@
+# Vivado generated files — DO NOT commit these
+*.jou
+*.log
+*.str
+*.debug
+
+# Simulation output
+ethernet_ids.sim/
+
+# Synthesis and implementation runs
+ethernet_ids.runs/
+
+# Cache
+ethernet_ids.cache/
+
+# Hardware files
+ethernet_ids.hw/
+
+# IP user files
+ethernet_ids.ip_user_files/
+
+# Generated files
+ethernet_ids.gen/
+
+# Backup files
+ethernet_ids.xpr.bak
+
+# OS files
+.DS_Store
+Thumbs.db
