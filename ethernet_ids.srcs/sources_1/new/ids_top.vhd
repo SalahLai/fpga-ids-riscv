@@ -61,7 +61,13 @@ architecture rtl of ids_top is
     signal alert_spoof_src    : std_logic;
     signal alert_land_attack  : std_logic;
     signal alert_any          : std_logic;
-
+    
+    signal alert_bogon_loop   : std_logic;
+    signal alert_bogon_link   : std_logic;
+    signal alert_bogon_mcast  : std_logic;
+    signal alert_ip_options   : std_logic;
+    signal alert_reserved_bit   : std_logic;
+    
     -- Alert latch (keeps LED on for visibility)
     signal alert_latch : std_logic := '0';
     
@@ -169,6 +175,16 @@ begin
             alert_fragment    => alert_fragment,
             alert_spoof_src   => alert_spoof_src,
             alert_land_attack => alert_land_attack,
+            alert_bogon_loop => alert_bogon_loop,
+            alert_bogon_link => alert_bogon_link,
+            alert_bogon_mcast => alert_bogon_mcast,
+            alert_ip_options => alert_ip_options,
+            alert_reserved_bit => alert_reserved_bit,
+            bogon_check_en => '1',
+            ip_options_en => '1',
+            reserved_bit_en => '1',
+            
+            
             alert_any         => alert_any
         );
         -- Layer 4a: TCP Parser

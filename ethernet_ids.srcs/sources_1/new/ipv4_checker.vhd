@@ -27,9 +27,21 @@ entity ipv4_checker is
         alert_fragment     : out std_logic;
         alert_spoof_src    : out std_logic;
         alert_land_attack  : out std_logic;
+        
+        -- R8-R12 new alerts
+        alert_bogon_loop : out std_logic;
+        alert_bogon_link : out std_logic;
+        alert_bogon_mcast : out std_logic;
+        alert_ip_options : out std_logic;
+        alert_reserved_bit : out std_logic;
+        -- Enable flags (from rule BRAM, default all 1)
+        bogon_check_en : in std_logic;
+        ip_options_en : in std_logic;
+        reserved_bit_en : in std_logic;
         -- Summary
         alert_any   : out std_logic
-    );
+        
+        );
 end ipv4_checker;
 
 architecture rtl of ipv4_checker is
@@ -42,14 +54,19 @@ begin
 
             -- Defaults
             alert_bad_version <= '0';
-            alert_bad_ihl     <= '0';
-            alert_bad_length  <= '0';
-            alert_low_ttl     <= '0';
-            alert_fragment    <= '0';
-            alert_spoof_src   <= '0';
-            alert_land_attack <= '0';
-            alert_any         <= '0';
-
+            alert_bad_ihl      <= '0';
+            alert_bad_length   <= '0';
+            alert_low_ttl      <= '0';
+            alert_fragment     <= '0';
+            alert_spoof_src    <= '0';
+            alert_land_attack  <= '0';
+            alert_any          <= '0';
+            alert_bogon_loop   <= '0';
+            alert_bogon_link   <= '0';
+            alert_bogon_mcast  <= '0';
+            alert_ip_options   <= '0';
+            alert_reserved_bit <= '0';
+            
             if rst = '1' then
                 null;
 
@@ -98,7 +115,36 @@ begin
                     alert_land_attack <= '1';
                     any_alert := '1';
                 end if;
-
+                -- R8: Bogon source - loopback (127.0.0.0/8)
+                if bogon_check_en = '1' and ip_src(31 downto 24) = x"7F" then 
+                alert_bogon_loop <='1';
+                any_alert := '1';
+                end if;
+                
+                -- R9: Bogon source - link-local (169.254.0.0/16)
+                if bogon_check_en = '1' and ip_src(31 downto 16) = x"A9FE" then 
+                alert_bogon_link <='1';
+                any_alert := '1';
+                end if;
+                
+                -- R10: Bogon source - multicast as source (224.0.0.0/4)
+                if bogon_check_en = '1' and ip_src(31 downto 28) = x"E" then 
+                alert_bogon_mcast <='1';
+                any_alert := '1';
+                end if;
+                -- R11: IP options present (IHL > 5)
+                if ip_options_en = '1' and unsigned(ip_ihl) > 5 then 
+                alert_ip_options <='1';
+                any_alert := '1';
+                end if;
+                -- R12: Reserved IPv4 flag bit set (bit 2 of flags)
+                if reserved_bit_en = '1' and ip_flags(2) = '1' then 
+                alert_reserved_bit <='1';
+                any_alert := '1';
+                end if;
+                
+                
+                
                 alert_any <= any_alert;
 
             end if;
