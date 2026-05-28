@@ -27,6 +27,14 @@ architecture sim of ids_top_tb is
     signal alert_bogon_mcast  : std_logic;
     signal alert_ip_options   : std_logic;
     signal alert_reserved_bit : std_logic;
+   
+    signal alert_udp_zero_len  : std_logic;
+    signal alert_udp_amplify   : std_logic;
+    signal alert_udp_land      : std_logic;
+    signal alert_udp_oversized : std_logic;
+    signal alert_udp_port_zero : std_logic;
+    signal alert_udp_ssdp      : std_logic;
+    signal alert_udp_memcached : std_logic;
 
     procedure send_byte (
         constant byte   : in  std_logic_vector(7 downto 0);
@@ -294,6 +302,74 @@ begin
     wait for 10 * period;
 end procedure;
 
+procedure send_udp_frame (
+    constant src_ip   : in std_logic_vector(31 downto 0);
+    constant dst_ip   : in std_logic_vector(31 downto 0);
+    constant sport    : in std_logic_vector(15 downto 0);
+    constant dport    : in std_logic_vector(15 downto 0);
+    constant udp_len  : in std_logic_vector(15 downto 0);
+    signal   rxd      : out std_logic_vector(1 downto 0);
+    signal   crs      : out std_logic;
+    constant period   : in time
+) is
+begin
+    -- Preamble + SFD
+    for i in 0 to 9 loop
+        send_byte(x"55", rxd, crs, period);
+    end loop;
+    send_byte(x"D5", rxd, crs, period);
+    -- Dest MAC
+    for i in 0 to 5 loop
+        send_byte(x"FF", rxd, crs, period);
+    end loop;
+    -- Src MAC
+    send_byte(x"AA", rxd, crs, period);
+    send_byte(x"BB", rxd, crs, period);
+    send_byte(x"CC", rxd, crs, period);
+    send_byte(x"DD", rxd, crs, period);
+    send_byte(x"EE", rxd, crs, period);
+    send_byte(x"FF", rxd, crs, period);
+    -- EtherType IPv4
+    send_byte(x"08", rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);
+    -- IPv4 header (IHL=5, protocol=0x11 UDP)
+    send_byte(x"45", rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);
+    send_byte(x"1C", rxd, crs, period);  -- total length = 28 (20 IP + 8 UDP)
+    send_byte(x"00", rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);
+    send_byte(x"40", rxd, crs, period);  -- TTL = 64
+    send_byte(x"11", rxd, crs, period);  -- protocol = 17 (UDP)
+    send_byte(x"00", rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);
+    -- Src IP
+    send_byte(src_ip(31 downto 24), rxd, crs, period);
+    send_byte(src_ip(23 downto 16), rxd, crs, period);
+    send_byte(src_ip(15 downto 8),  rxd, crs, period);
+    send_byte(src_ip(7 downto 0),   rxd, crs, period);
+    -- Dst IP
+    send_byte(dst_ip(31 downto 24), rxd, crs, period);
+    send_byte(dst_ip(23 downto 16), rxd, crs, period);
+    send_byte(dst_ip(15 downto 8),  rxd, crs, period);
+    send_byte(dst_ip(7 downto 0),   rxd, crs, period);
+    -- UDP header
+    send_byte(sport(15 downto 8), rxd, crs, period);
+    send_byte(sport(7 downto 0),  rxd, crs, period);
+    send_byte(dport(15 downto 8), rxd, crs, period);
+    send_byte(dport(7 downto 0),  rxd, crs, period);
+    send_byte(udp_len(15 downto 8), rxd, crs, period);
+    send_byte(udp_len(7 downto 0),  rxd, crs, period);
+    send_byte(x"00", rxd, crs, period);  -- checksum
+    send_byte(x"00", rxd, crs, period);
+    -- End of frame
+    crs <= '0';
+    rxd <= "00";
+    wait for 10 * period;
+end procedure;
+
 
 begin
 
@@ -410,6 +486,115 @@ begin
             length => x"0028",
             ttl    => x"40",
             flags  => "100",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+        -- ── UDP TESTS ─────────────────────────────────────────────
+
+        -- Test U1: Forbidden dst port (DNS = 53 = 0x0035)
+        -- Expected: alert_udp_forbidden fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80102",
+            sport   => x"C000",
+            dport   => x"0035",
+            udp_len => x"0008",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U2: UDP length < 8 (impossible)
+        -- Expected: alert_udp_short fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80102",
+            sport   => x"C001",
+            dport   => x"0050",
+            udp_len => x"0004",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U3: UDP length = 0
+        -- Expected: alert_udp_zero_len fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80102",
+            sport   => x"C002",
+            dport   => x"0050",
+            udp_len => x"0000",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U4: Amplification attack response (src port = NTP = 123 = 0x007B)
+        -- Expected: alert_udp_amplify fires
+        send_udp_frame(
+            src_ip  => x"0A000001",
+            dst_ip  => x"C0A80101",
+            sport   => x"007B",
+            dport   => x"C003",
+            udp_len => x"0008",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U5: UDP Land attack (src IP+port = dst IP+port)
+        -- Expected: alert_udp_land fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80101",
+            sport   => x"1234",
+            dport   => x"1234",
+            udp_len => x"0008",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U6: Oversized UDP (length > 1472 = 0x05C0)
+        -- Expected: alert_udp_oversized fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80102",
+            sport   => x"C004",
+            dport   => x"0050",
+            udp_len => x"05DC",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U7: Port zero (src port = 0)
+        -- Expected: alert_udp_port_zero fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80102",
+            sport   => x"0000",
+            dport   => x"0050",
+            udp_len => x"0008",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U8: SSDP abuse (dst port = 1900 = 0x076C)
+        -- Expected: alert_udp_ssdp fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80102",
+            sport   => x"C005",
+            dport   => x"076C",
+            udp_len => x"0008",
+            rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
+        );
+        wait for 5 * CLK_PERIOD;
+
+        -- Test U9: Memcached amplification (port 11211 = 0x2BCB)
+        -- Expected: alert_udp_memcached fires
+        send_udp_frame(
+            src_ip  => x"C0A80101",
+            dst_ip  => x"C0A80102",
+            sport   => x"C006",
+            dport   => x"2BCB",
+            udp_len => x"0008",
             rxd => rmii_rxd, crs => rmii_crs_dv, period => CLK_PERIOD
         );
         wait for 5 * CLK_PERIOD;

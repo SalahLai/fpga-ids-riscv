@@ -21,7 +21,12 @@ entity ids_top is
         alert_null_scan : out std_logic;
         alert_xmas_scan : out std_logic;
         alert_forbidden : out std_logic;
-        tcp_alert_any   : out std_logic
+        tcp_alert_any   : out std_logic;
+        -- UDP alert outputs
+        alert_udp_forbidden : out std_logic;
+        alert_udp_short     : out std_logic;
+        alert_udp_zero      : out std_logic;
+        udp_alert_any       : out std_logic
     );
 end ids_top;
 
@@ -79,6 +84,25 @@ architecture rtl of ids_top is
     signal tcp_parse_done  : std_logic;
     signal tcp_parse_valid : std_logic;
     signal tcp_alert_any_i : std_logic;
+    
+    -- udp_parser outputs
+    signal udp_parse_done  : std_logic;
+    signal udp_parse_valid : std_logic;
+    signal udp_src_port    : std_logic_vector(15 downto 0);
+    signal udp_dst_port    : std_logic_vector(15 downto 0);
+    signal udp_length      : std_logic_vector(15 downto 0);
+    -- udp_cheker outputs
+    signal alert_udp_zero_len  : std_logic;
+    signal alert_udp_amplify   : std_logic;
+    signal alert_udp_land      : std_logic;
+    signal alert_udp_oversized : std_logic;
+    signal alert_udp_port_zero : std_logic;
+    signal alert_udp_ssdp      : std_logic;
+    signal alert_udp_memcached : std_logic;
+
+    
+    signal udp_alert_any_i     : std_logic;
+    
 begin
 
     -- Layer 1: RMII Receiver
@@ -208,31 +232,87 @@ u_tcp_parser : entity work.tcp_parser
     );
 
 -- Layer 4b: TCP Checker
-u_tcp_checker : entity work.tcp_checker
-    port map (
-        clk            => clk,
-        rst            => rst,
-        parse_done     => tcp_parse_done,
-        parse_valid    => tcp_parse_valid,
-        tcp_src_port   => tcp_src_port,
-        tcp_dst_port   => tcp_dst_port,
-        tcp_flags      => tcp_flags,
-        alert_syn_fin   => alert_syn_fin,
-        alert_syn_rst   => alert_syn_rst,
-        alert_null_scan => alert_null_scan,
-        alert_xmas_scan => alert_xmas_scan,
-        alert_forbidden => alert_forbidden,
-        alert_any       => tcp_alert_any_i
-    );  
-    tcp_alert_any <= tcp_alert_any_i;
+    u_tcp_checker : entity work.tcp_checker
+        port map (
+            clk            => clk,
+            rst            => rst,
+            parse_done     => tcp_parse_done,
+            parse_valid    => tcp_parse_valid,
+            tcp_src_port   => tcp_src_port,
+            tcp_dst_port   => tcp_dst_port,
+            tcp_flags      => tcp_flags,
+            alert_syn_fin   => alert_syn_fin,
+            alert_syn_rst   => alert_syn_rst,
+            alert_null_scan => alert_null_scan,
+            alert_xmas_scan => alert_xmas_scan,
+            alert_forbidden => alert_forbidden,
+            alert_any       => tcp_alert_any_i
+        );  
+        tcp_alert_any <= tcp_alert_any_i;
+        
+    
+    
+    -- UDP Parser
+    u_udp_parser : entity work.udp_parser
+        port map (
+            clk         => clk,
+            rst         => rst,
+            rx_byte     => rx_byte,
+            rx_valid    => rx_valid,
+            rx_sof      => rx_sof,
+            rx_eof      => rx_eof,
+            ip_protocol => ip_protocol,
+            ip_ihl      => ip_ihl,
+            ip_valid    => ip_parse_done,
+            udp_src_port => udp_src_port,
+            udp_dst_port => udp_dst_port,
+            udp_length   => udp_length,
+            parse_done   => udp_parse_done,
+            parse_valid  => udp_parse_valid
+        );
+
+    -- UDP Checker
+    u_udp_checker : entity work.udp_checker
+        port map (
+            clk          => clk,
+            rst          => rst,
+            parse_done   => udp_parse_done,
+            parse_valid  => udp_parse_valid,
+            udp_src_port => udp_src_port,
+            udp_dst_port => udp_dst_port,
+            udp_length   => udp_length,
+            ip_src       => ip_src,        -- ADD THIS
+            ip_dst       => ip_dst,        -- ADD THIS
+            forbidden_port_0 => x"0035",
+            forbidden_port_1 => x"007B",
+            forbidden_port_2 => x"0000",
+            forbidden_port_3 => x"0000",
+            forbidden_port_4 => x"0000",
+            forbidden_port_5 => x"0000",
+            forbidden_port_6 => x"0000",
+            forbidden_port_7 => x"0000",
+            alert_udp_forbidden => alert_udp_forbidden,
+            alert_udp_short     => alert_udp_short,
+            alert_udp_zero_len  => alert_udp_zero_len,
+            alert_udp_amplify   => alert_udp_amplify,
+            alert_udp_land      => alert_udp_land,
+            alert_udp_oversized => alert_udp_oversized,
+            alert_udp_port_zero => alert_udp_port_zero,
+            alert_udp_ssdp      => alert_udp_ssdp,
+            alert_udp_memcached => alert_udp_memcached,
+            alert_any           => udp_alert_any_i
+        );     
+        udp_alert_any       <= udp_alert_any_i;
     -- Alert latch: once an alert fires, LED stays on
     -- Reset clears it
+    
+    
   process(clk)
     begin
         if rising_edge(clk) then
             if rst = '1' then
                 alert_latch <= '0';
-            elsif alert_any = '1' or tcp_alert_any_i = '1' then
+            elsif alert_any = '1' or tcp_alert_any_i = '1' or udp_alert_any_i = '1' then
                 alert_latch <= '1';
             end if;
         end if;
